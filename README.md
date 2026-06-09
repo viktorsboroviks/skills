@@ -1,8 +1,17 @@
 # skills
 
-`/iterate` - communicate with ai agent via file.
+## /iterate
 
-For a new discussion
+Communicate with ai agent via file.
+
+### usage
+
+From your ai agent:
+
+- `/iterate <filename>` - begin or continue a discussion via file.
+- `/iterate` - add new iteration to already running discussion.
+
+For a new discussion:
 
 1. create a text file with the initial prompt
 2. run `/iterate <filename>` in the ai agent of your choice (claude, opencode etc.)
@@ -14,26 +23,19 @@ For a new discussion
 
 If continuing already started discussion - begin from #2.
 
-## why?
+### why?
 
 1. transparently saves all discussion, can be saved/resumed at any moment
 2. allows for unlimited inline comments directly where you want them
 2. cross-tool, easy to search and store, as simple format as possible
 
-## installation
+### installation
 
 To install use one of:
 
 - `make install-copy`
-- `make install-symplink`
+- `make install-symlink`
 
 To remove:
 
 - `make remove`
-
-## usage
-
-From your ai agent:
-
-`/iterate <filename>` - begin or continue a discussion via file.
-`/iterate` - add new iteration to already running discussion.
