@@ -7,11 +7,11 @@ user-invocable: true
 ## Usage
 
 ```
-/iterate [<filepath>] [--history] [/skill [args]]
+/iterate [<filepath>] [--history] [--marker <prefix>] [/skill [args]]
 ```
 
-**Parsing rule**: `--history` is a flag; if an arg matches a known skill name
-(single-segment, starts with `/`), it is `<skill>`; everything else is `<filepath>`.
+**Parsing rule**: `--history` and `--marker` are flags; if an arg matches a known skill
+name (single-segment, starts with `/`), it is `<skill>`; everything else is `<filepath>`.
 
 ## Arguments
 
@@ -19,7 +19,9 @@ user-invocable: true
   reuse the active path from session context. If the file does not exist, it is created.
 - **`--history`** — scan conversation history since the previous `/iterate` call and
   prepend a `### Since last iteration` summary to the iteration.
-- **`/skill [args]`** — skill to run after processing pending `i!` markers. Args after
+- **`--marker <prefix>`** — inline feedback marker prefix to scan for. Defaults to `i!`.
+  Pass `--marker r!` to use `r!` markers (e.g., when invoked from `/rubberduck`).
+- **`/skill [args]`** — skill to run after processing pending markers. Args after
   the skill name are forwarded verbatim to the skill.
 
 ## Behavior
@@ -30,22 +32,25 @@ user-invocable: true
 2. **Read**: if `<filepath>` was given or the active path changed, read the full file.
    Otherwise grep for the last `## Iteration` heading, get its line number, and read from
    that line forward.
-3. **Init** (new file only): create the file. Skip to step 7.
+3. **Init** (new file only): create the file. Skip to step 5.
 4. **History** (if `--history`): scan conversation history backward to the previous
    `/iterate` call. Identify substantive events (skill invocations, code changes, answered
    questions; skip `/help`, file reads, trivial navigation). If the boundary is clear,
    build a `### Since last iteration` block with one-line bullets
    (`- [event] → [one-line summary]`). If unclear, omit the block and note it inline.
-5. **Collect `i!` markers**: from the read content, find all `i!` markers. Classify as
-   plain (`i! text`) or skill (`i! /skillname [args]`).
-6. **Respond to plain `i!` markers**: produce a native response addressing each one.
-   Omit this step if there are none.
-7. **Run skill**: if `/skill` was passed as an argument or a `i! /skill` marker was found,
-   run the skill. Append output under `### Command: /skill [args]`.
-8. **Append**: write the iteration to the file using bash (`cat >> <filepath>`). Confirm
+5. **Run CLI skill**: if `/skill` was passed as an argument, run it now. Append output
+   under `### Command: /skill [args]`. Omit this step if no CLI skill was given.
+6. **Collect markers**: from the read content, find all markers matching the active prefix
+   (default `i!`; overridden by `--marker`). Classify as plain (`<prefix> text`) or skill
+   (`<prefix> /skillname [args]`).
+7. **Run marker-invoked skills**: dispatch each `<prefix> /skill` marker in file order.
+   Append each output under `### Command: /skill [args]`. Omit this step if there are none.
+8. **Respond to plain markers**: produce a native response addressing each one, with
+   context from steps 5 and 7. Omit this step if there are none.
+9. **Append**: write the iteration to the file using bash (`cat >> <filepath>`). Confirm
    with `tail -5 <filepath>`.
-9. **First invocation only**: append usage hint — *"Add `i!` inline anywhere in this
-   iteration to respond."*
+10. **First invocation only**: append usage hint — *"Add `<active-marker>` inline anywhere in this
+    iteration to respond."* (substitute the active marker prefix, e.g. `i!` or `r!`).
 
 ## Iteration formats
 
@@ -67,17 +72,40 @@ user-invocable: true
 [verbatim output]
 ```
 
-**Combined (`i!` markers + skill):**
+**Combined (CLI skill + plain markers):**
 
 ```markdown
 ## Iteration #N - YYYY-MM-DD HH:MM
 
-[i! response body]
-
 ### Command: /skill [args]
 
 [verbatim output]
+
+---
+
+[plain marker response body]
 ```
+
+**Combined (CLI skill + marker skills + plain markers):**
+
+```markdown
+## Iteration #N - YYYY-MM-DD HH:MM
+
+### Command: /cli-skill [args]
+
+[cli verbatim output]
+
+### Command: /marker-skill [args]
+
+[marker verbatim output]
+
+---
+
+[plain marker response body]
+```
+
+The `---` separator in Combined formats appears only when plain marker responses follow
+the skill blocks. Omit it when there are no plain responses.
 
 **With `--history` (standalone or combined):**
 
@@ -93,13 +121,15 @@ user-invocable: true
 
 ## Rules
 
-- **`i!` markers**: inline user feedback within the file. A pending marker is a line
-  where `i!` appears as a standalone token (followed by a space or end-of-line, not
-  inside inline code) after the last `## Iteration #` heading and not inside a fenced
-  code block. A marker where the content starts with `/` (`i! /skillname [args]`)
-  dispatches that skill instead of producing a native response.
-- **`i!` first**: when `/iterate` is invoked with a skill, pending `i!` markers are
-  addressed in the same iteration before the skill output.
+- **Markers**: inline user feedback within the file. A pending marker is a line
+  where the active prefix (default `i!`; overridden by `--marker`) appears as a
+  standalone token (followed by a space or end-of-line, not inside inline code) after
+  the last `## Iteration #` heading and not inside a fenced code block. A marker where
+  the content starts with `/` (`<prefix> /skillname [args]`) dispatches that skill
+  instead of producing a native response.
+- **CLI skill first**: when `/skill` is passed as an argument, it runs before all
+  markers. Marker-invoked skills (`<prefix> /skill`) run after the CLI skill, in file
+  order. Plain markers are addressed last, with context from all preceding skill output.
 - **Incremental reads**: on re-invocation, grep for the last `## Iteration #[0-9]`
   heading and read from that line forward; full-file read only on init or active-path
   change. The pattern `^## Iteration #[0-9]` matches any iteration number (the digit
