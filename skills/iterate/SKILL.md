@@ -49,7 +49,7 @@ name (single-segment, starts with `/`), it is `<skill>`; everything else is `<fi
    context from steps 5 and 7. Omit this step if there are none.
 9. **Append**: write the iteration to the file using bash (`cat >> <filepath>`). Confirm
    with `tail -5 <filepath>`.
-10. **First invocation only**: append usage hint — *"Add `<active-marker>` inline anywhere in this
+10. **After iteration #1 is appended (only once)**: append usage hint — *"Add `<active-marker>` inline anywhere in this
     iteration to respond."* (substitute the active marker prefix, e.g. `i!` or `r!`).
 
 ## Iteration formats
@@ -148,6 +148,11 @@ the skill blocks. Omit it when there are no plain responses.
   recent `/iterate <filepath>` invocation and restore from it.
 - **Timestamp**: extract from system context using local time; format `YYYY-MM-DD HH:MM`
   (no seconds, no timezone offset).
+- **Heading normalization**: when appending skill output under a `### Command:`
+  heading, shift all heading lines (lines starting with one or more `#`) one
+  level deeper by prepending one `#`. Skip lines inside fenced code blocks
+  (between ` ``` ` fences). This keeps each skill's own heading hierarchy intact
+  while nesting it correctly under the command block.
 - **Append safety**: always append using bash (`cat >> <filepath>`), not the Edit tool —
   iteration headings repeat across the file and create ambiguous edit anchors.
 - **File write failure**: surface the error inline; do not silently skip the append.
