@@ -7,48 +7,67 @@ user-invocable: true
 ## Usage
 
 ```
-/iterate [<filepath>] [--history] [--marker <prefix>] [/skill [args]]
+Usage: /iterate [<filepath>] [--history] [--marker <prefix>] [</skill [args]>]
+
+Arguments:
+  <filepath>         Path to session file (required on first call).
+  --history          Prepend "Since last iteration" summary.
+  --marker <str>     Feedback marker prefix [default: i!].
+  </skill [args]>    Skill to run after processing markers.
+  --help, -h         Show this help.
 ```
 
-**Parsing rule**: `--history` and `--marker` are flags; if an arg matches a known skill
-name (single-segment, starts with `/`), it is `<skill>`; everything else is `<filepath>`.
+**Parsing rule**: `--history`, `--marker`, `--help`, and `-h` are flags; if an arg
+matches a known skill name (single-segment, starts with `/`), it is `<skill>`; everything
+else is `<filepath>`. `--help` / `-h`: output the `## Usage` block and stop.
 
 ## Arguments
 
 - **`<filepath>`** — path to the session file. Required on first invocation; omit to
-  reuse the active path from session context. If the file does not exist, it is created.
+  reuse the active path from session context. The file must exist; if not found, an error
+  is returned.
 - **`--history`** — scan conversation history since the previous `/iterate` call and
   prepend a `### Since last iteration` summary to the iteration.
 - **`--marker <prefix>`** — inline feedback marker prefix to scan for. Defaults to `i!`.
   Pass `--marker r!` to use `r!` markers (e.g., when invoked from `/rubberduck`).
 - **`/skill [args]`** — skill to run after processing pending markers. Args after
   the skill name are forwarded verbatim to the skill.
+- **`--help`, `-h`** — output the `## Usage` block and stop. No file is read or written.
 
 ## Behavior
 
+0. **Help**: if `--help` or `-h` is in the argument list, output the `## Usage` block and
+   stop — no file is read or written.
 1. **Resolve active path**: use `<filepath>` if given, else session context. If neither
    exists, respond *"No active iterate session. Run `/iterate <filepath>` to initialize."*
    and stop.
 2. **Read**: if `<filepath>` was given or the active path changed, read the full file.
    Otherwise grep for the last `## Iteration` heading, get its line number, and read from
    that line forward.
-3. **Init** (new file only): create the file. Skip to step 5.
+3. **File check**: if the file does not exist, respond *"File not found: `<filepath>`.
+   Create it first, then run `/iterate <filepath>`."* and stop.
 4. **History** (if `--history`): scan conversation history backward to the previous
    `/iterate` call. Identify substantive events (skill invocations, code changes, answered
    questions; skip `/help`, file reads, trivial navigation). If the boundary is clear,
    build a `### Since last iteration` block with one-line bullets
    (`- [event] → [one-line summary]`). If unclear, omit the block and note it inline.
-5. **Run CLI skill**: if `/skill` was passed as an argument, run it now. Append output
-   under `### Command: /skill [args]`. Omit this step if no CLI skill was given.
+5. **Run CLI skill**: if `/skill` was passed as an argument, run it now. Capture output
+   under `### Command: /skill [args]` in the iteration body (file write happens in
+   step 9 — do not write here). Omit this step if no CLI skill was given.
 6. **Collect markers**: from the read content, find all markers matching the active prefix
    (default `i!`; overridden by `--marker`). Classify as plain (`<prefix> text`) or skill
    (`<prefix> /skillname [args]`).
 7. **Run marker-invoked skills**: dispatch each `<prefix> /skill` marker in file order.
-   Append each output under `### Command: /skill [args]`. Omit this step if there are none.
+   Capture each output under `### Command: /skill [args]` in the iteration body (file
+   write happens in step 9 — do not write here). Omit this step if there are none.
 8. **Respond to plain markers**: produce a native response addressing each one, with
    context from steps 5 and 7. Omit this step if there are none.
-9. **Append**: write the iteration to the file using bash (`cat >> <filepath>`). Confirm
-   with `tail -5 <filepath>`.
+9. **Append to file (mandatory completion gate)**: regardless of which sub-skills ran
+   in steps 5–8, the iteration is not done until the bash `cat >> <filepath>` has
+   executed and `tail -5 <filepath>` confirms. Reaching end-of-turn without this
+   leaves the session inconsistent — the sub-skill's output exists only in the
+   conversation, not in the file. This step is non-skippable; it fires even when
+   steps 5–8 are all omitted.
 10. **After iteration #1 is appended (only once)**: append usage hint — *"Add `<active-marker>` inline anywhere in this
     iteration to respond."* (substitute the active marker prefix, e.g. `i!` or `r!`).
 
