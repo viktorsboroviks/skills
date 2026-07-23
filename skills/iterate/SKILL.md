@@ -41,9 +41,13 @@ else is `<filepath>`. `--help` / `-h`: output the `## Usage` block and stop.
 1. **Resolve active path**: use `<filepath>` if given, else session context. If neither
    exists, respond *"No active iterate session. Run `/iterate <filepath>` to initialize."*
    and stop.
-2. **Read**: if `<filepath>` was given or the active path changed, read the full file.
-   Otherwise grep for the last `## Iteration` heading, get its line number, and read from
-   that line forward.
+2. **Read**: read the full file only when there is no active path yet, or the given
+   `<filepath>` differs from the active path (a genuinely new session). When the given
+   path equals the active path already in context — or no path was given — use the
+   incremental read: grep for the last `## Iteration` heading, get its line number, and
+   read from that line forward. Passing the same path again does not force a full re-read;
+   markers are only actionable after the last heading and the file is append-only, so the
+   incremental read is always sufficient on a same-path re-invocation.
 3. **File check**: if the file does not exist, respond *"File not found: `<filepath>`.
    Create it first, then run `/iterate <filepath>`."* and stop.
 4. **History** (if `--history`): scan conversation history backward to the previous
