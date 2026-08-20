@@ -1,12 +1,12 @@
 ---
 name: iterate
-description: Minimal file-based AI session harness — reads i! markers, appends iterations, supports skill decoration and history scan.
+description: Minimal file-based AI session harness — single-emission (the iteration body is written once, to the file; the CLI reply is a bare status line). Reads i! markers, appends iterations, supports skill decoration and history scan.
 user-invocable: true
 ---
 
 ## Usage
 
-```
+```text
 Usage: /iterate [<filepath>] [--history] [--marker <prefix>] [</skill [args]>]
 
 Arguments:
@@ -55,25 +55,36 @@ else is `<filepath>`. `--help` / `-h`: output the `## Usage` block and stop.
    questions; skip `/help`, file reads, trivial navigation). If the boundary is clear,
    build a `### Since last iteration` block with one-line bullets
    (`- [event] → [one-line summary]`). If unclear, omit the block and note it inline.
-5. **Run CLI skill**: if `/skill` was passed as an argument, run it now. Capture output
-   under `### Command: /skill [args]` in the iteration body (file write happens in
-   step 9 — do not write here). Omit this step if no CLI skill was given.
+5. **Run CLI skill**: if `/skill` was passed as an argument, run it now. Compose its
+   output under `### Command: /skill [args]` **into the iteration body** — do not print it
+   as a conversational response; it is emitted once, in step 9. Omit this step if no CLI
+   skill was given.
 6. **Collect markers**: from the read content, find all markers matching the active prefix
    (default `i!`; overridden by `--marker`). Classify as plain (`<prefix> text`) or skill
    (`<prefix> /skillname [args]`).
 7. **Run marker-invoked skills**: dispatch each `<prefix> /skill` marker in file order.
-   Capture each output under `### Command: /skill [args]` in the iteration body (file
-   write happens in step 9 — do not write here). Omit this step if there are none.
-8. **Respond to plain markers**: produce a native response addressing each one, with
-   context from steps 5 and 7. Omit this step if there are none.
-9. **Append to file (mandatory completion gate)**: regardless of which sub-skills ran
-   in steps 5–8, the iteration is not done until the bash `cat >> <filepath>` has
-   executed and `tail -5 <filepath>` confirms. Reaching end-of-turn without this
-   leaves the session inconsistent — the sub-skill's output exists only in the
-   conversation, not in the file. This step is non-skippable; it fires even when
-   steps 5–8 are all omitted.
+   Compose each output under `### Command: /skill [args]` **into the iteration body** — do
+   not print it as a conversational response; it is emitted once, in step 9. Omit this
+   step if there are none.
+8. **Respond to plain markers**: compose a response addressing each one (with context from
+   steps 5 and 7) **into the iteration body** — do not print it as a conversational
+   response; it is emitted once, in step 9. Omit this step if there are none.
+9. **Append to file — the sole emission (mandatory completion gate)**: the iteration body
+   composed in steps 4–8 is emitted exactly once, here, via a single bash
+   `cat >> <filepath>` heredoc, then `tail -3 <filepath>` confirms. The body must NOT also
+   be printed as a conversational response: that duplicate doubles output tokens for no
+   benefit, since the file is the deliverable and the heredoc is already visible in the
+   tool-call panel. The iteration is not done until the append has executed; reaching
+   end-of-turn without it leaves the session inconsistent. Non-skippable — it fires even
+   when steps 5–8 are all omitted. **Use a quoted heredoc delimiter** (`<<'EOF'`) whose
+   token appears nowhere in the body, so backticks, `$`, and `$(...)` in the body are
+   written literally rather than expanded by the shell.
 10. **After iteration #1 is appended (only once)**: append usage hint — *"Add `<active-marker>` inline anywhere in this
     iteration to respond."* (substitute the active marker prefix, e.g. `i!` or `r!`).
+11. **Conversational reply — bare status only**: after the append, the entire visible
+    reply is one line: *"Iteration #N appended to `<filepath>`."* Add at most one further
+    line, and only to surface a blocking error. Never restate, summarize, or preview the
+    body — it lives in the file.
 
 ## Iteration formats
 
@@ -153,6 +164,13 @@ the skill blocks. Omit it when there are no plain responses.
 - **CLI skill first**: when `/skill` is passed as an argument, it runs before all
   markers. Marker-invoked skills (`<prefix> /skill`) run after the CLI skill, in file
   order. Plain markers are addressed last, with context from all preceding skill output.
+- **Single emission (token discipline)**: the iteration body — including any CLI-skill,
+  marker-skill, and plain-marker output — is generated exactly once, as the `cat >>`
+  heredoc argument in step 9, and never also emitted as a conversational response; the
+  visible channel carries only the one-line status. Sub-skills invoked under `/iterate`
+  (e.g. `/rubberduck-method`) compose their output *into* the appended body rather than
+  printing it separately. This roughly halves output tokens (measured ~835 saved on a
+  2.4 KB body) with no loss to the file, which is the deliverable.
 - **Incremental reads**: on re-invocation, grep for the last `## Iteration #[0-9]`
   heading and read from that line forward; full-file read only on init or active-path
   change. The pattern `^## Iteration #[0-9]` matches any iteration number (the digit
@@ -177,5 +195,7 @@ the skill blocks. Omit it when there are no plain responses.
   (between ` ``` ` fences). This keeps each skill's own heading hierarchy intact
   while nesting it correctly under the command block.
 - **Append safety**: always append using bash (`cat >> <filepath>`), not the Edit tool —
-  iteration headings repeat across the file and create ambiguous edit anchors.
+  iteration headings repeat across the file and create ambiguous edit anchors. Quote the
+  heredoc delimiter (`<<'EOF'`) and pick one absent from the body so shell metacharacters
+  in the body are not expanded.
 - **File write failure**: surface the error inline; do not silently skip the append.
